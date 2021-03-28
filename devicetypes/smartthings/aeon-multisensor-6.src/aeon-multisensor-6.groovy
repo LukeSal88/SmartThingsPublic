@@ -28,9 +28,13 @@ metadata {
 
 		attribute "batteryStatus", "string"
 
-		fingerprint deviceId: "0x2101", inClusters: "0x5E,0x86,0x72,0x59,0x85,0x73,0x71,0x84,0x80,0x30,0x31,0x70,0x7A", outClusters: "0x5A"
-		fingerprint deviceId: "0x2101", inClusters: "0x5E,0x86,0x72,0x59,0x85,0x73,0x71,0x84,0x80,0x30,0x31,0x70,0x7A,0x5A"
-		fingerprint mfr: "0086", prod: "0102", model: "0064", deviceJoinName: "Aeotec MultiSensor 6"
+		fingerprint deviceId: "0x2101", inClusters: "0x5E,0x86,0x72,0x59,0x85,0x73,0x71,0x84,0x80,0x30,0x31,0x70,0x7A", outClusters: "0x5A", deviceJoinName: "Aeon Multipurpose Sensor"
+		fingerprint deviceId: "0x2101", inClusters: "0x5E,0x86,0x72,0x59,0x85,0x73,0x71,0x84,0x80,0x30,0x31,0x70,0x7A,0x5A", deviceJoinName: "Aeon Multipurpose Sensor"
+		fingerprint mfr: "0086", prod: "0102", model: "0064", deviceJoinName: "Aeotec Multipurpose Sensor" //Aeotec MultiSensor 6
+		fingerprint mfr: "0086", prod: "0202", model: "0064", deviceJoinName: "Aeotec Multipurpose Sensor" //AU //Aeotec MultiSensor 6
+		fingerprint mfr: "0371", prod: "0002", model: "0018", deviceJoinName: "Aeotec Multipurpose Sensor" //Aeotec MultiSensor 7 (EU)
+		fingerprint mfr: "0371", prod: "0102", model: "0018", deviceJoinName: "Aeotec Multipurpose Sensor" //Aeotec MultiSensor 7 (US)
+		fingerprint mfr: "0371", prod: "0202", model: "0018", deviceJoinName: "Aeotec Multipurpose Sensor" //Aeotec MultiSensor 7 (AU)
 	}
 
 	simulator {
@@ -69,15 +73,12 @@ metadata {
 	}
 
 	preferences {
-		input description: "Please consult AEOTEC MULTISENSOR 6 operating manual for advanced setting options. You can skip this configuration to use default settings",
-			title: "Advanced Configuration", type: "paragraph", element: "paragraph"
-
 		input "motionDelayTime", "enum", title: "Motion Sensor Delay Time",
 			options: ["20 seconds", "40 seconds", "1 minute", "2 minutes", "3 minutes", "4 minutes"]
 
 		input "motionSensitivity", "enum", title: "Motion Sensor Sensitivity", options: ["maximum", "normal", "minimum", "disabled"]
 
-		input "reportInterval", "enum", title: "Sensors Report Interval",
+		input "reportInterval", "enum", title: "Report Interval", description: "How often the device should report in minutes",
 			options: ["8 minutes", "15 minutes", "30 minutes", "1 hour", "6 hours", "12 hours", "18 hours", "24 hours"]
 	}
 
@@ -190,6 +191,7 @@ def zwaveEvent(physicalgraph.zwave.commands.wakeupv1.WakeUpNotification cmd) {
 		result << response(configure())
 	} else {
 		log.debug("Device has been configured sending >> wakeUpNoMoreInformation()")
+		if (isAeotecMultisensor7()) cmds << zwave.configurationV1.configurationGet(parameterNumber: 10).format()
 		cmds << zwave.wakeUpV1.wakeUpNoMoreInformation().format()
 		result << response(cmds)
 	}
@@ -319,13 +321,24 @@ def zwaveEvent(physicalgraph.zwave.commands.notificationv3.NotificationReport cm
 				result << createEvent(name: "tamper", value: "clear")
 				break
 			case 3:
+			case 9:
 				result << createEvent(name: "tamper", value: "detected", descriptionText: "$device.displayName was tampered")
 				// Clear the tamper alert after 10s. This is a temporary fix for the tamper attribute until local execution handles it
 				unschedule(clearTamper, [forceForLocallyExecuting: true])
 				runIn(10, clearTamper, [forceForLocallyExecuting: true])
 				break
 			case 7:
+			case 8:
 				result << motionEvent(1)
+				break
+		}
+	} else if (cmd.notificationType == 8) {
+		switch (cmd.event) {
+			case 2:
+				result << createEvent(name: "powerSource", value: "battery", displayed: false)
+				break
+			case 3:
+				result << createEvent(name: "powerSource", value: "dc", displayed: false)
 				break
 		}
 	} else {
@@ -339,7 +352,10 @@ def zwaveEvent(physicalgraph.zwave.commands.configurationv2.ConfigurationReport 
 	log.debug "ConfigurationReport: $cmd"
 	def result = []
 	def value
-	if (cmd.parameterNumber == 9) {
+	if (isAeotecMultisensor7() && cmd.parameterNumber == 10) {
+		value = cmd.scaledConfigurationValue ? "dc" : "battery"
+		result << createEvent(name: "powerSource", value: value, displayed: false)
+	} else if (cmd.parameterNumber == 9) {
 		if (cmd.configurationValue[0] == 0) {
 			value = "dc"
 			if (!isConfigured()) {
@@ -432,6 +448,7 @@ def configure() {
 
 	//8. query configuration
 	request << zwave.configurationV1.configurationGet(parameterNumber: 9)
+	request << zwave.configurationV1.configurationGet(parameterNumber: 10)
 	request << zwave.configurationV1.configurationGet(parameterNumber: 101)
 	request << zwave.configurationV1.configurationGet(parameterNumber: 102)
 	request << zwave.configurationV1.configurationGet(parameterNumber: 111)
@@ -445,7 +462,7 @@ def configure() {
 	def checkInterval = 2 * (timeOptionValueMap[reportInterval] ?: 60 * 60) + 2 * 60
 	sendEvent(name: "checkInterval", value: checkInterval, displayed: false, data: [protocol: "zwave", hubHardwareId: device.hub.hardwareID])
 
-	commands(request, (state.sec || zwaveInfo?.zw?.endsWith("s")) ? 2000 : 500) + ["delay 20000", zwave.wakeUpV1.wakeUpNoMoreInformation().format()]
+	commands(request, (state.sec || zwaveInfo?.zw?.contains("s")) ? 2000 : 500) + ["delay 20000", zwave.wakeUpV1.wakeUpNoMoreInformation().format()]
 }
 
 
@@ -478,7 +495,7 @@ private isConfigured() {
 }
 
 private command(physicalgraph.zwave.Command cmd) {
-	if (state.sec || zwaveInfo?.zw?.endsWith("s")) {
+	if (state.sec || zwaveInfo?.zw?.contains("s")) {
 		zwave.securityV1.securityMessageEncapsulation().encapsulate(cmd).format()
 	} else {
 		cmd.format()
@@ -543,4 +560,8 @@ def getReportTypesFromValue(value) {
 		reportList = "none"
 	}
 	reportList
+}
+
+private isAeotecMultisensor7() {
+	zwaveInfo.model.equals("0018") 
 }

@@ -28,8 +28,9 @@ metadata {
 		capability "Refresh"
 		capability "Health Check"
 
-		fingerprint profileId: "0104", deviceId: "0402", inClusters: "0000,0003,0500", outClusters: "0000", manufacturer: "ClimaxTechnology", model: "CO_00.00.00.22TC", deviceJoinName: "Ozom Smart Carbon Monoxide Sensor", mnmn: "SmartThings", vid: "generic-carbon-monoxide"
-		fingerprint profileId: "0104", deviceId: "0402", inClusters: "0000,0003,0500", outClusters: "0000", manufacturer: "ClimaxTechnology", model: "CO_00.00.00.15TC", deviceJoinName: "Ozom Smart Carbon Monoxide Sensor", mnmn: "SmartThings", vid: "generic-carbon-monoxide"
+		fingerprint profileId: "0104", deviceId: "0402", inClusters: "0000,0003,0500", outClusters: "0000", manufacturer: "ClimaxTechnology", model: "CO_00.00.00.22TC", deviceJoinName: "Ozom Carbon Monoxide Sensor", mnmn: "SmartThings", vid: "generic-carbon-monoxide" //Ozom Smart Carbon Monoxide Sensor
+		fingerprint profileId: "0104", deviceId: "0402", inClusters: "0000,0003,0500", outClusters: "0000", manufacturer: "ClimaxTechnology", model: "CO_00.00.00.15TC", deviceJoinName: "Ozom Carbon Monoxide Sensor", mnmn: "SmartThings", vid: "generic-carbon-monoxide" //Ozom Smart Carbon Monoxide Sensor
+		fingerprint profileId: "0104", deviceId: "0402", inClusters: "0000,0001,0003,0500", outClusters: "0000", manufacturer: "HEIMAN", model: "COSensor-EM", deviceJoinName: "HEIMAN Carbon Monoxide Sensor" //HEIMAN CO Sensor
 	}
 
 	tiles {
@@ -145,10 +146,10 @@ def ping() {
 
 def configure() {
 	log.debug "configure"
-	sendEvent(name: "checkInterval", value:6 * 60 * 60 + 2 * 60, displayed: false, data: [protocol: "zigbee", hubHardwareId: device.hub.hardwareID, offlinePingable: "1"])
 	Integer minReportTime = 0
 	Integer maxReportTime = 180
 	Integer reportableChange = null
+	sendEvent(name: "checkInterval", value: maxReportTime * 2 + 10 * 60, displayed: false, data: [protocol: "zigbee", hubHardwareId: device.hub.hardwareID, offlinePingable: "1"])
 	return refresh() + zigbee.enrollResponse() + zigbee.configureReporting(zigbee.POWER_CONFIGURATION_CLUSTER, 0x0021, DataType.UINT8, 30, 21600, 0x10) +
 				zigbee.configureReporting(zigbee.IAS_ZONE_CLUSTER, zigbee.ATTRIBUTE_IAS_ZONE_STATUS, DataType.BITMAP16, minReportTime, maxReportTime, reportableChange)
 }
